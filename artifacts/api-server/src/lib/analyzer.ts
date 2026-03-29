@@ -202,11 +202,15 @@ export function analyzeText(text: string): TextAnalysisResult {
   }
 
   const speculationCount = countMatches(SPECULATION_PHRASES, text);
-  if (speculationCount > 0) {
+  if (speculationCount === 1) {
+    // Single instance of speculation is a minor concern, not a major anomaly.
+    // Does NOT block REAL classification when strong credibility signals are present.
+    score -= 3;
+    flags.push("Minor speculative phrasing detected (1 instance) — low weight");
+  } else if (speculationCount >= 2) {
+    // Repeated speculation is a meaningful signal — apply the full penalty.
     score -= 10;
-    flags.push(
-      `Speculative phrasing detected (${speculationCount} instance${speculationCount > 1 ? "s" : ""})`
-    );
+    flags.push(`Heavy speculative phrasing detected (${speculationCount} instances)`);
   }
 
   const hasExaggeratedImpact = anyMatch(EXAGGERATED_IMPACT, text);
