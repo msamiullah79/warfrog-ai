@@ -1,0 +1,19 @@
+packages:
+  "framer-motion": "For smooth layout transitions and revealing analysis results"
+  "react-dropzone": "For drag-and-drop image upload"
+  "date-fns": "For formatting history timestamps"
+  "lucide-react": "Icons for UI"
+  "clsx": "Utility for Tailwind class merging"
+  "tailwind-merge": "Utility for Tailwind class merging"
+
+images:
+  - path: "artifacts/sentinel/public/images/bg-mesh.png"
+    description: "Dark, abstract cyber-security tech mesh background with subtle glowing cyan lines, low contrast"
+    aspect_ratio: "16:9"
+  - path: "artifacts/sentinel/public/images/logo.png"
+    description: "Minimalist geometric security shield icon glowing in cyan, transparent background, tech style"
+    aspect_ratio: "1:1"
+
+notes:
+  - "Assuming @workspace/api-client-react exports all generated hooks and types properly"
+  - "The API expects multipart/form-data for /api/analyze, the generated hook uses FormData correctly based on the AnalyzeRequest type"

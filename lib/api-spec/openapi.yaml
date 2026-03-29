@@ -1,15 +1,16 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Cross-Border Sentinel API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: analysis
+    description: Fake news analysis operations
 paths:
   /healthz:
     get:
@@ -24,6 +25,79 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /analyze:
+    post:
+      operationId: analyzeContent
+      tags: [analysis]
+      summary: Analyze news content for credibility
+      description: Analyzes text and optionally an image to produce a credibility score
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/AnalyzeRequest"
+      responses:
+        "200":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /history:
+    get:
+      operationId: getHistory
+      tags: [analysis]
+      summary: Get analysis history
+      description: Returns a list of previously analyzed content
+      responses:
+        "200":
+          description: List of analysis history records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoryResponse"
+    delete:
+      operationId: clearHistory
+      tags: [analysis]
+      summary: Clear all analysis history
+      responses:
+        "200":
+          description: History cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+  /history/{id}:
+    delete:
+      operationId: deleteHistoryItem
+      tags: [analysis]
+      summary: Delete a specific history item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Item deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "404":
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +107,146 @@ components:
           type: string
       required:
         - status
-
+    AnalyzeRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          description: News article text to analyze
+        image:
+          type: string
+          format: binary
+          description: Optional image to verify
+      required:
+        - text
+    TextAnalysis:
+      type: object
+      properties:
+        score:
+          type: number
+          description: Text credibility score 0-100
+        confidence:
+          type: number
+          description: Model confidence 0-1
+        flags:
+          type: array
+          items:
+            type: string
+          description: Detected issues
+        positive_signals:
+          type: array
+          items:
+            type: string
+          description: Credibility indicators
+      required:
+        - score
+        - confidence
+        - flags
+        - positive_signals
+    ImageAnalysis:
+      type: object
+      properties:
+        score:
+          type: number
+          description: Image credibility score 0-100
+        has_image:
+          type: boolean
+        flags:
+          type: array
+          items:
+            type: string
+        positive_signals:
+          type: array
+          items:
+            type: string
+      required:
+        - score
+        - has_image
+        - flags
+        - positive_signals
+    AnalysisResult:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Record ID in history
+        credibility_score:
+          type: number
+          description: Overall credibility score 0-100
+        prediction:
+          type: string
+          enum: [Real, Fake, Uncertain]
+        explanation:
+          type: array
+          items:
+            type: string
+          description: Human-readable explanation points
+        text_analysis:
+          $ref: "#/components/schemas/TextAnalysis"
+        image_analysis:
+          $ref: "#/components/schemas/ImageAnalysis"
+        analyzed_at:
+          type: string
+          format: date-time
+        text_preview:
+          type: string
+          description: First 200 chars of analyzed text
+      required:
+        - id
+        - credibility_score
+        - prediction
+        - explanation
+        - text_analysis
+        - image_analysis
+        - analyzed_at
+        - text_preview
+    HistoryItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        credibility_score:
+          type: number
+        prediction:
+          type: string
+          enum: [Real, Fake, Uncertain]
+        text_preview:
+          type: string
+        analyzed_at:
+          type: string
+          format: date-time
+        has_image:
+          type: boolean
+      required:
+        - id
+        - credibility_score
+        - prediction
+        - text_preview
+        - analyzed_at
+        - has_image
+    HistoryResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HistoryItem"
+        total:
+          type: integer
+      required:
+        - items
+        - total
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message

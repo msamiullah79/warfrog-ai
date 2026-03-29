@@ -1,0 +1,249 @@
+You are a senior AI engineer and full-stack developer. Your task is to design and build a complete working prototype for the following project:
+
+PROJECT TITLE:
+Cross-Border Sentinel: Multi-Modal Fake News Detection System
+
+OBJECTIVE:
+Build a simplified but functional multi-modal fake news detection system that analyzes both text and images and outputs a credibility score.
+
+IMPORTANT CONSTRAINTS:
+
+* This is a SOLO student project (4th semester CS level)
+* The system MUST be simple, modular, and buildable within 2–3 weeks
+* Focus on WORKING PROTOTYPE, not research-level complexity
+* Avoid overly complex deep learning pipelines
+* Use pre-trained models wherever possible
+
+---
+
+SYSTEM OVERVIEW:
+
+The system will take:
+
+1. News text input
+2. Optional image input
+
+And output:
+
+* Credibility Score (0–100)
+* Prediction (Real / Fake)
+* Explanation (why it was classified this way)
+
+---
+
+ARCHITECTURE (3 MAIN MODULES):
+
+1. TEXT ANALYSIS MODULE (CORE MODULE)
+
+Goal:
+Classify news as real or fake using NLP
+
+Implementation:
+
+* Use Hugging Face Transformers
+* Model: bert-base-uncased or distilbert-base-uncased
+* Fine-tune on fake news dataset
+
+Dataset options:
+
+* FakeNewsNet (recommended) → contains text + images ([Nature][1])
+* LIAR dataset (backup for text-only) ([Hugging Face][2])
+
+Steps:
+
+* Preprocess text (lowercase, remove noise)
+* Tokenize using tokenizer
+* Train binary classifier
+* Output probability score
+
+---
+
+2. IMAGE VERIFICATION MODULE (LIGHTWEIGHT)
+
+Goal:
+Perform basic image validation (NOT advanced forensics)
+
+Implementation:
+
+* Extract metadata (EXIF)
+* Check:
+
+  * Creation date
+  * Missing metadata
+* Flag suspicious images
+
+Optional (if time permits):
+
+* Use simple CNN or pre-trained model for image classification
+* OR detect anomalies (blur, artifacts)
+
+NOTE:
+Do NOT implement GAN detection or deepfake detection (too complex)
+
+---
+
+3. CREDIBILITY SCORING MODULE
+
+Goal:
+Combine outputs into final score
+
+Logic:
+
+* NLP confidence score (70% weight)
+* Image flags (30% weight)
+
+Example:
+final_score = (0.7 * text_score) + (0.3 * image_score)
+
+Output:
+
+* Score (0–100)
+* Label (Real / Fake)
+* Reason explanation
+
+---
+
+TECH STACK:
+
+Backend:
+
+* Python 3.10+
+* FastAPI (for API endpoints)
+
+ML:
+
+* PyTorch
+* Hugging Face Transformers
+
+Frontend:
+
+* Streamlit (simple and fast UI)
+
+Libraries:
+
+* transformers
+* torch
+* scikit-learn
+* pandas
+* pillow (image processing)
+* exifread or PIL for metadata
+
+---
+
+FEATURES TO IMPLEMENT:
+
+1. User Input:
+
+   * Text input box
+   * Optional image upload
+
+2. Output Display:
+
+   * Credibility score (progress bar)
+   * Prediction label
+   * Explanation:
+
+     * “Detected sensational language”
+     * “Image metadata missing”
+
+3. Dashboard:
+
+   * Clean UI using Streamlit
+   * Show model confidence
+
+---
+
+FOLDER STRUCTURE:
+
+project/
+│── backend/
+│   ├── main.py (FastAPI app)
+│   ├── model.py (load NLP model)
+│   ├── utils.py
+│
+│── frontend/
+│   ├── app.py (Streamlit)
+│
+│── data/
+│── models/
+│── requirements.txt
+│── README.md
+
+---
+
+API DESIGN:
+
+POST /analyze
+Input:
+{
+"text": "...",
+"image": optional
+}
+
+Output:
+{
+"credibility_score": 78,
+"prediction": "Real",
+"explanation": ["Low emotional language", "Metadata valid"]
+}
+
+---
+
+MODEL TRAINING:
+
+* Use small dataset (1000–3000 samples max)
+* Train quickly (avoid heavy GPU dependency)
+* Save trained model locally
+
+---
+
+SIMPLIFICATIONS (VERY IMPORTANT):
+
+* DO NOT implement real-time news scraping
+* DO NOT use external APIs like BBC or Reuters
+* DO NOT build complex ensemble models
+* Keep everything lightweight and explainable
+
+---
+
+BONUS (OPTIONAL IF TIME):
+
+* Add keyword highlighting (fake indicators)
+* Add confusion matrix visualization
+* Add history of analyzed news
+
+---
+
+EXPECTED OUTPUT:
+
+Generate:
+
+1. Complete backend code (FastAPI)
+2. Complete frontend code (Streamlit)
+3. Model training script
+4. requirements.txt
+5. README with setup instructions
+
+---
+
+QUALITY REQUIREMENTS:
+
+* Code must be clean and modular
+* Add comments explaining logic
+* Ensure system runs locally with simple commands
+* Avoid unnecessary complexity
+
+---
+
+FINAL GOAL:
+
+A working prototype that demonstrates:
+
+* Multi-modal analysis (text + image)
+* Credibility scoring
+* Clean UI for demonstration
+
+This is a semester project, so clarity, simplicity, and functionality are more important than perfection.
+
+[1]: https://www.nature.com/articles/s41598-025-05702-w?utm_source=chatgpt.com "A fake news detection model using the integration of ..."
+[2]: https://huggingface.co/datasets/ucsbnlp/liar?utm_source=chatgpt.com "ucsbnlp/liar · Datasets at Hugging Face"
