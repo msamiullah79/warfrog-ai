@@ -1,0 +1,113 @@
+Fix and simplify the credibility scoring logic in my fake news detection system.
+
+The current system has conflicting rules and over-corrected logic, causing:
+
+* Real news to be classified as UNCERTAIN
+* Subtle fake news to be classified as REAL
+* Too many forced conditions (like forcing UNCERTAIN)
+
+GOAL:
+Create a balanced, consistent scoring system that:
+
+* correctly classifies real news
+* flags fake news
+* treats subtle misinformation as UNCERTAIN
+
+---
+
+STEP 1: REMOVE THESE BAD RULES
+
+Remove any rules like:
+
+* "if uncertainty >= X → force UNCERTAIN"
+* "if any anomaly → cannot be REAL"
+
+These are too rigid and causing wrong results.
+
+---
+
+STEP 2: USE A PURE SCORING SYSTEM
+
+Start score at 50 (neutral baseline)
+
+Then adjust:
+
+---
+
+POSITIVE SIGNALS (+)
+
++10 → neutral, factual tone
++10 → structured reporting (multi-paragraph, organized)
++10 → mentions officials / institutions
++5  → responsible uncertainty (e.g. "not yet confirmed", "officials said")
+
+---
+
+NEGATIVE SIGNALS (-)
+
+-15 → sensational words ("BREAKING", "massive destruction", "shocking")
+-15 → strong unverified claims ("reportedly", "sources say", "claims that")
+-10 → speculation phrases ("may have", "could indicate", "analysts believe")
+-10 → exaggerated impact without evidence
+-5  → excessive capitalization
+
+---
+
+STEP 3: IMPORTANT DISTINCTION
+
+DO NOT treat all uncertainty as negative.
+
+* Responsible uncertainty = small positive (+5)
+* Speculative / rumor language = strong negative (-15)
+
+---
+
+STEP 4: FINAL CLASSIFICATION
+
+After calculating score:
+
+0–39   → FAKE
+40–69  → UNCERTAIN
+70–100 → REAL
+
+---
+
+STEP 5: CRITICAL RULE (ONLY ONE)
+
+If BOTH:
+
+* strong positive signals AND
+* strong negative signals
+
+Then:
+→ FINAL = UNCERTAIN
+
+(This handles subtle fake news properly)
+
+---
+
+STEP 6: REMOVE IMAGE DEFAULT BIAS
+
+If no image:
+→ DO NOT add default score
+→ Use text score only
+
+---
+
+STEP 7: OUTPUT
+
+Return:
+
+* score (0–100)
+* label (REAL / FAKE / UNCERTAIN)
+* clear explanation of which signals were detected
+
+---
+
+GOAL RESULT:
+
+* Real news → REAL (70–85 range)
+* Obvious fake → FAKE (0–30 range)
+* Subtle fake → UNCERTAIN (40–65 range)
+
+Keep logic simple, consistent, and explainable.

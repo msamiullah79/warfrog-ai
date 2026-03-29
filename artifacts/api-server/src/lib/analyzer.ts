@@ -1,150 +1,100 @@
 /**
- * Multi-modal fake news analysis engine.
- * Uses rule-based NLP + image metadata checks.
- * No GPU or model training required.
+ * Multi-modal fake news analysis engine — v4 (simplified pure scoring)
  *
- * Scoring philosophy (v3):
- * - Distinguish speculative language (misinformation signal) from cautious reporting (credibility signal)
- * - Negative uncertainty phrases (e.g. "reportedly", "sources say") → penalise
- * - Positive/responsible uncertainty phrases (e.g. "not yet confirmed", "preliminary assessment") → credit
- * - UNCERTAIN override fires only when negative_uncertainty_count >= 2 (not total uncertainty)
- * - Mixed signals (credibility + major anomaly) → UNCERTAIN
- * - No image provided → score based entirely on text
- * - Thresholds: 0–40 FAKE | 41–65 UNCERTAIN | 66–100 REAL (only if no major anomalies)
+ * Scoring philosophy:
+ * - Baseline: 50 (neutral)
+ * - Apply positive and negative signal adjustments
+ * - Single override rule: strong positive + strong negative → UNCERTAIN
+ * - No image: use text score only (no default image score blending)
+ * - Thresholds: 0–39 FAKE | 40–69 UNCERTAIN | 70–100 REAL
  */
 
 // ─────────────────────────────────────────────────────────────
-// FAKE / ANOMALY INDICATORS
+// POSITIVE SIGNALS
 // ─────────────────────────────────────────────────────────────
 
-const FAKE_INDICATORS = [
-  { pattern: /\b(BREAKING|URGENT|EXCLUSIVE|SHOCKING|BOMBSHELL)\b/i, label: "Sensational headline keywords detected", weight: 14 },
-  { pattern: /\b(you won'?t believe|mind.?blow|jaw.?drop|unbelievable)\b/i, label: "Clickbait language detected", weight: 12 },
-  { pattern: /\b(they don'?t want you to know|coverup|cover.?up|hidden truth)\b/i, label: "Conspiracy-style language detected", weight: 18 },
-  { pattern: /\b(miracle cure|100% guaranteed|scientifically proven to)\b/i, label: "Unverified absolute claims detected", weight: 12 },
-  { pattern: /\b(illuminati|deep state|new world order|globalist|cabal)\b/i, label: "Extreme conspiracy terminology detected", weight: 25 },
-  { pattern: /\b(share before deleted|must share|going viral|spread the word)\b/i, label: "Viral share-bait language detected", weight: 14 },
-  { pattern: /[!]{2,}/, label: "Excessive exclamation marks detected", weight: 8 },
-  { pattern: /[A-Z]{5,}/, label: "Excessive capitalization detected", weight: 7 },
-  { pattern: /\b(hoax|fabricated|staged|false flag|psyop)\b/i, label: "Disinformation terminology detected", weight: 20 },
-  { pattern: /\b(mainstream media|msm|lamestream|fake news media)\b/i, label: "Anti-media bias indicators", weight: 10 },
+/** +10 — Neutral, factual tone indicators */
+const FACTUAL_TONE = [
+  /\b(according to|confirmed|reported|stated|announced|published)\b/i,
+  /\b(data shows?|evidence (suggests?|indicates?)|findings? (show|suggest|indicate))\b/i,
+  /\b(in a statement|on record|officially)\b/i,
+];
+
+/** +10 — Structured, multi-paragraph reporting indicators */
+const STRUCTURED_REPORTING = [
+  /\b(however|in contrast|on the other hand|meanwhile|additionally|furthermore)\b/i,
+  /\b(background|context|previously|in response|following)\b/i,
+  /\b(correction|clarification|editor.?s note|update)\b/i,
+];
+
+/** +10 — Named officials or institutional references */
+const INSTITUTIONAL_REFERENCES = [
+  /\b(president|minister|senator|governor|director|secretary|spokesperson|commissioner)\b/i,
+  /\b(WHO|UN|NATO|CDC|FBI|CIA|Pentagon|parliament|congress|senate|supreme court)\b/i,
+  /\b(university|hospital|institute|agency|department|ministry|bureau|authority)\b/i,
+  /\b(professor|dr\.|doctor|researcher|scientist|analyst|expert)\b/i,
+];
+
+/** +5 — Responsible uncertainty (cautious, transparent journalism) */
+const RESPONSIBLE_UNCERTAINTY = [
+  /\bnot\s+yet\s+confirmed\b/i,
+  /\bofficials?\s+(have\s+)?not\s+(yet\s+)?confirmed\b/i,
+  /\bawaiting\s+(independent\s+)?verification\b/i,
+  /\bpreliminary\s+(assessment|findings?|results?|data)\b/i,
+  /\bindependent\s+verification\s+(was\s+)?(not\s+)?(immediately\s+)?available\b/i,
+  /\bcould\s+not\s+be\s+independently\s+verified\b/i,
+  /\bsubject\s+to\s+(change|revision|further\s+review)\b/i,
+  /\bsent\s+(a\s+)?request\s+for\s+comment\b/i,
 ];
 
 // ─────────────────────────────────────────────────────────────
-// NEGATIVE UNCERTAINTY — speculative / anonymous / unverified language
-// Each occurrence is penalised. >= 2 total can trigger UNCERTAIN override.
+// NEGATIVE SIGNALS
 // ─────────────────────────────────────────────────────────────
 
-const NEGATIVE_UNCERTAINTY: Array<{ pattern: RegExp; label: string; penaltyPerMatch: number }> = [
-  {
-    pattern: /\breportedly\b/gi,
-    label: "\"Reportedly\" — unverified claim, no named source",
-    penaltyPerMatch: 10,
-  },
-  {
-    pattern: /\bclaims?\s+that\b/gi,
-    label: "\"Claims that\" — assertion presented without supporting evidence",
-    penaltyPerMatch: 10,
-  },
-  {
-    pattern: /\bsources?\s+say\b/gi,
-    label: "\"Sources say\" — anonymous or uncited sourcing",
-    penaltyPerMatch: 12,
-  },
-  {
-    pattern: /\bunverified\s+reports?\b/gi,
-    label: "\"Unverified reports\" — content explicitly noted as unverified",
-    penaltyPerMatch: 14,
-  },
-  {
-    pattern: /\ballegedly\b/gi,
-    label: "\"Allegedly\" — unconfirmed allegation",
-    penaltyPerMatch: 10,
-  },
-  {
-    pattern: /\banonymous\s+source/gi,
-    label: "Anonymous source cited — identity cannot be verified",
-    penaltyPerMatch: 12,
-  },
-  {
-    pattern: /\bpurportedly\b/gi,
-    label: "\"Purportedly\" — uncertain or disputed attribution",
-    penaltyPerMatch: 10,
-  },
-  {
-    pattern: /\bsome\s+(people\s+)?(say|believe|claim)\b/gi,
-    label: "Vague collective attribution — no specific source identified",
-    penaltyPerMatch: 8,
-  },
-  {
-    pattern: /\bunconfirmed\s+(report|claim|source|allegation)/gi,
-    label: "\"Unconfirmed [claim/report]\" — explicitly flagged as unverified",
-    penaltyPerMatch: 14,
-  },
+/** -15 — Sensational / clickbait language */
+const SENSATIONAL_LANGUAGE = [
+  /\b(BREAKING|URGENT|BOMBSHELL|SHOCKING|EXPLOSIVE|EXPOSED)\b/i,
+  /\b(massive destruction|total collapse|complete disaster|wiped out|obliterated)\b/i,
+  /\b(you won'?t believe|mind.?blow|jaw.?drop|unbelievable|insane)\b/i,
+  /\b(share before deleted|must share|going viral|spread the word|wake up)\b/i,
+  /\b(illuminati|deep state|new world order|cabal|globalist|psyop|false flag)\b/i,
+  /\b(hoax|fabricated|staged|cover.?up|hidden truth|they don'?t want you to know)\b/i,
 ];
 
-// ─────────────────────────────────────────────────────────────
-// POSITIVE UNCERTAINTY — cautious, transparent, responsible journalism
-// These are NOT penalised. They reflect honest reporting practice and earn a small bonus.
-// ─────────────────────────────────────────────────────────────
-
-const POSITIVE_UNCERTAINTY: Array<{ pattern: RegExp; label: string; bonusPerMatch: number }> = [
-  {
-    pattern: /\bnot\s+yet\s+confirmed\b/gi,
-    label: "\"Not yet confirmed\" — responsible acknowledgment of pending verification",
-    bonusPerMatch: 6,
-  },
-  {
-    pattern: /\bofficials?\s+(have\s+)?not\s+(yet\s+)?confirmed\b/gi,
-    label: "\"Officials have not confirmed\" — transparent attribution of uncertainty",
-    bonusPerMatch: 6,
-  },
-  {
-    pattern: /\bawaiting\s+(independent\s+)?verification\b/gi,
-    label: "\"Awaiting verification\" — proactive disclosure of unverified status",
-    bonusPerMatch: 7,
-  },
-  {
-    pattern: /\bpreliminary\s+(assessment|findings?|results?|data)\b/gi,
-    label: "\"Preliminary assessment/findings\" — appropriate scientific caution",
-    bonusPerMatch: 6,
-  },
-  {
-    pattern: /\bindependent\s+verification\s+(was\s+)?(not\s+)?(immediately\s+)?available\b/gi,
-    label: "\"Independent verification not available\" — honest transparency about sourcing limits",
-    bonusPerMatch: 7,
-  },
-  {
-    pattern: /\b(could\s+not\s+be\s+independently\s+verified|was\s+unable\s+to\s+independently\s+verify)\b/gi,
-    label: "Explicit statement of verification attempt — responsible journalistic practice",
-    bonusPerMatch: 8,
-  },
-  {
-    pattern: /\bsubject\s+to\s+(change|revision|further\s+review)\b/gi,
-    label: "\"Subject to change\" — acknowledgment of evolving information",
-    bonusPerMatch: 5,
-  },
-  {
-    pattern: /\bsent\s+(a\s+)?(request|requests?)\s+for\s+comment\b/gi,
-    label: "\"Sent request for comment\" — standard journalistic due-diligence",
-    bonusPerMatch: 8,
-  },
+/** -15 — Strong unverified / speculative sourcing */
+const UNVERIFIED_CLAIMS = [
+  /\breportedly\b/gi,
+  /\bclaims?\s+that\b/gi,
+  /\bsources?\s+say\b/gi,
+  /\ballegedly\b/gi,
+  /\banonymous\s+source/gi,
+  /\bunverified\s+reports?\b/gi,
+  /\bpurportedly\b/gi,
+  /\bsome\s+(people\s+)?(say|believe|claim)\b/gi,
 ];
 
-// ─────────────────────────────────────────────────────────────
-// STRONG VERIFICATION SIGNALS
-// ─────────────────────────────────────────────────────────────
-
-const CREDIBILITY_INDICATORS = [
-  { pattern: /\b(according to [A-Z][a-z]|cited by|as reported by|published in)\b/i, label: "Named source attribution", weight: 14 },
-  { pattern: /\bpeer.?reviewed\b/i, label: "Peer-reviewed content referenced", weight: 16 },
-  { pattern: /\b(study|research|investigation|analysis)\s+(by|from|at|published)\b/i, label: "Attributed research referenced", weight: 12 },
-  { pattern: /\b(percent|percentage|\d+%)\b/i, label: "Specific statistical data present", weight: 10 },
-  { pattern: /\b(said in a statement|told reporters|in a press conference|confirmed by)\b/i, label: "Formal on-record attribution", weight: 14 },
-  { pattern: /\b(correction|editor's note|clarification|retraction)\b/i, label: "Editorial transparency markers present", weight: 10 },
-  { pattern: /\bhttps?:\/\/[^\s]{10,}/i, label: "Cited external source link", weight: 12 },
-  { pattern: /\b(survey of|sample of|study of)\s+\d+/i, label: "Quantified study sample referenced", weight: 12 },
+/** -10 — Speculation / hedging without basis */
+const SPECULATION_PHRASES = [
+  /\bmay\s+have\b/gi,
+  /\bcould\s+indicate\b/gi,
+  /\banalysts?\s+believe\b/gi,
+  /\bexperts?\s+fear\b/gi,
+  /\bsuspected\s+to\b/gi,
+  /\bthought\s+to\s+be\b/gi,
+  /\bappears?\s+to\b/gi,
+  /\bseems?\s+to\b/gi,
 ];
+
+/** -10 — Exaggerated impact without evidence */
+const EXAGGERATED_IMPACT = [
+  /\b(hundreds of thousands|millions? (are|will be)|entire (country|nation|world))\b/i,
+  /\b(unprecedented|never before seen|history.?making|once.?in.?a.?lifetime)\b/i,
+  /\b(100%|guaranteed|proven beyond|absolute proof|definitive evidence)\b/i,
+  /\b(everyone (knows?|agrees?|says?)|nobody (talks? about|reports?))\b/i,
+];
+
+/** -5 — Excessive capitalization */
+const EXCESSIVE_CAPS = /[A-Z]{5,}/;
 
 // ─────────────────────────────────────────────────────────────
 // TYPES
@@ -155,9 +105,9 @@ export interface TextAnalysisResult {
   confidence: number;
   flags: string[];
   positive_signals: string[];
-  /** Number of speculative / anonymous uncertainty phrases detected */
+  has_strong_positive: boolean;
+  has_strong_negative: boolean;
   negative_uncertainty_count: number;
-  /** Number of responsible / cautious uncertainty phrases detected */
   positive_uncertainty_count: number;
   has_major_anomalies: boolean;
 }
@@ -178,105 +128,128 @@ export interface FullAnalysisResult {
 }
 
 // ─────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────
+
+/** Returns true if any pattern in the list matches the text. */
+function anyMatch(patterns: RegExp[], text: string): boolean {
+  return patterns.some((p) => p.test(text));
+}
+
+/** Returns match count across all patterns in the list. */
+function countMatches(patterns: RegExp[], text: string): number {
+  return patterns.reduce((sum, p) => {
+    const m = text.match(new RegExp(p.source, p.flags.includes("g") ? p.flags : p.flags + "g"));
+    return sum + (m ? m.length : 0);
+  }, 0);
+}
+
+// ─────────────────────────────────────────────────────────────
 // TEXT ANALYSIS
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Analyzes news text for credibility using pattern matching.
- *
- * Baseline: 65 (neutral-cautious)
- * - Negative uncertainty: penalised per occurrence (capped per phrase type)
- * - Positive uncertainty: awarded a small bonus — treated as responsible journalism
- * - Hard anomalies and credibility signals work as before
+ * Analyzes news text using a pure additive/subtractive scoring model.
+ * Baseline: 50. Final score clamped to [0, 100].
  */
 export function analyzeText(text: string): TextAnalysisResult {
   const flags: string[] = [];
   const positive_signals: string[] = [];
-  let penaltyPoints = 0;
-  let bonusPoints = 0;
-  let negativePhraseCount = 0;
-  let positivePhraseCount = 0;
+  let score = 50;
 
-  // 1. Hard anomaly indicators
-  let hasMajorAnomalies = false;
-  for (const indicator of FAKE_INDICATORS) {
-    if (indicator.pattern.test(text)) {
-      flags.push(indicator.label);
-      penaltyPoints += indicator.weight;
-      if (indicator.weight >= 14) hasMajorAnomalies = true;
-    }
+  // ── POSITIVE SIGNALS ──────────────────────────────────────
+
+  const hasFactualTone = anyMatch(FACTUAL_TONE, text);
+  if (hasFactualTone) {
+    score += 10;
+    positive_signals.push("Neutral, factual tone detected");
   }
 
-  // 2. Negative uncertainty — speculative language (penalise per occurrence)
-  for (const indicator of NEGATIVE_UNCERTAINTY) {
-    const matches = text.match(indicator.pattern);
-    if (matches) {
-      const count = matches.length;
-      negativePhraseCount += count;
-      // Cap penalty per phrase type to prevent runaway from a single repeated word
-      const penalty = Math.min(count * indicator.penaltyPerMatch, 28);
-      penaltyPoints += penalty;
-      flags.push(`${indicator.label} (×${count})`);
-    }
+  const hasStructuredReporting = anyMatch(STRUCTURED_REPORTING, text);
+  if (hasStructuredReporting) {
+    score += 10;
+    positive_signals.push("Structured, multi-perspective reporting detected");
   }
 
-  // 3. Positive uncertainty — responsible journalism (bonus, no penalty)
-  for (const indicator of POSITIVE_UNCERTAINTY) {
-    const matches = text.match(indicator.pattern);
-    if (matches) {
-      const count = matches.length;
-      positivePhraseCount += count;
-      // Small bonus; each phrase type capped so it can't inflate the score artificially
-      const bonus = Math.min(count * indicator.bonusPerMatch, 14);
-      bonusPoints += bonus;
-      positive_signals.push(`${indicator.label} (×${count})`);
-    }
+  const hasInstitutionalRef = anyMatch(INSTITUTIONAL_REFERENCES, text);
+  if (hasInstitutionalRef) {
+    score += 10;
+    positive_signals.push("Official or institutional references present");
   }
 
-  // 4. Verification / credibility signals
-  for (const indicator of CREDIBILITY_INDICATORS) {
-    if (indicator.pattern.test(text)) {
-      positive_signals.push(indicator.label);
-      bonusPoints += indicator.weight;
-    }
+  const responsibleUncertaintyCount = countMatches(RESPONSIBLE_UNCERTAINTY, text);
+  if (responsibleUncertaintyCount > 0) {
+    score += 5;
+    positive_signals.push(
+      `Responsible uncertainty language present (${responsibleUncertaintyCount} instance${responsibleUncertaintyCount > 1 ? "s" : ""})`
+    );
   }
 
-  // 5. Length — only flag very short content, no bonus for length
+  // ── NEGATIVE SIGNALS ──────────────────────────────────────
+
+  const sensationalMatches = SENSATIONAL_LANGUAGE.filter((p) => p.test(text));
+  if (sensationalMatches.length > 0) {
+    score -= 15;
+    flags.push("Sensational or clickbait language detected");
+  }
+
+  const unverifiedCount = countMatches(UNVERIFIED_CLAIMS, text);
+  if (unverifiedCount > 0) {
+    score -= 15;
+    flags.push(
+      `Strong unverified sourcing language detected (${unverifiedCount} instance${unverifiedCount > 1 ? "s" : ""})`
+    );
+  }
+
+  const speculationCount = countMatches(SPECULATION_PHRASES, text);
+  if (speculationCount > 0) {
+    score -= 10;
+    flags.push(
+      `Speculative phrasing detected (${speculationCount} instance${speculationCount > 1 ? "s" : ""})`
+    );
+  }
+
+  const hasExaggeratedImpact = anyMatch(EXAGGERATED_IMPACT, text);
+  if (hasExaggeratedImpact) {
+    score -= 10;
+    flags.push("Exaggerated impact claims without supporting evidence");
+  }
+
+  if (EXCESSIVE_CAPS.test(text)) {
+    score -= 5;
+    flags.push("Excessive capitalization detected");
+  }
+
+  // ── SHORT CONTENT FLAG (mild penalty) ─────────────────────
+
   const wordCount = text.split(/\s+/).filter(Boolean).length;
   if (wordCount < 30) {
-    flags.push("Very short content — insufficient for credibility assessment");
-    penaltyPoints += 8;
+    score -= 8;
+    flags.push("Very short content — insufficient for reliable assessment");
   }
 
-  // 6. Sentence length — very short avg sentence is a minor flag
-  const sentences = text.split(/[.!?]+/).filter((s) => s.trim().length > 0);
-  const avgSentenceLength = wordCount / Math.max(sentences.length, 1);
-  if (avgSentenceLength < 5 && wordCount > 20) {
-    flags.push("Very short average sentence length — possible low-quality content");
-    penaltyPoints += 4;
-  }
+  // ── CLAMP ─────────────────────────────────────────────────
 
-  // 7. Direct quotations — credibility signal
-  const quoteMatches = text.match(/[""].+?[""]/g) || text.match(/".+?"/g) || [];
-  if (quoteMatches.length > 0) {
-    positive_signals.push("Direct quotations present");
-    bonusPoints += 6;
-  }
+  score = Math.max(0, Math.min(100, Math.round(score)));
 
-  // Compute raw score from cautious baseline
-  const rawScore = Math.max(0, Math.min(100, 65 - penaltyPoints + bonusPoints));
+  // ── STRONG SIGNAL FLAGS (used by computeFinalScore) ───────
+
+  const hasStrongPositive = hasFactualTone || hasInstitutionalRef || hasStructuredReporting;
+  const hasStrongNegative = sensationalMatches.length > 0 || unverifiedCount > 0;
 
   const totalSignals = flags.length + positive_signals.length;
-  const confidence = Math.min(0.95, 0.4 + totalSignals * 0.05);
+  const confidence = Math.min(0.95, 0.4 + totalSignals * 0.06);
 
   return {
-    score: Math.round(rawScore),
+    score,
     confidence: Math.round(confidence * 100) / 100,
     flags,
     positive_signals,
-    negative_uncertainty_count: negativePhraseCount,
-    positive_uncertainty_count: positivePhraseCount,
-    has_major_anomalies: hasMajorAnomalies,
+    has_strong_positive: hasStrongPositive,
+    has_strong_negative: hasStrongNegative,
+    negative_uncertainty_count: unverifiedCount,
+    positive_uncertainty_count: responsibleUncertaintyCount,
+    has_major_anomalies: sensationalMatches.length > 0,
   };
 }
 
@@ -285,9 +258,9 @@ export function analyzeText(text: string): TextAnalysisResult {
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Analyzes image metadata and basic properties.
- * When no image is provided score = 0 and has_image = false;
- * computeFinalScore uses text only in that case.
+ * Analyzes image metadata and basic file properties.
+ * Returns has_image: false when no image is supplied;
+ * computeFinalScore uses text-only in that case.
  */
 export function analyzeImage(
   imageBuffer: Buffer | null,
@@ -348,9 +321,6 @@ export function analyzeImage(
   };
 }
 
-/**
- * Checks if a JPEG buffer contains EXIF data.
- */
 function checkJpegExif(buffer: Buffer): boolean {
   if (buffer.length < 4) return false;
   if (buffer[0] !== 0xff || buffer[1] !== 0xd8) return false;
@@ -359,8 +329,7 @@ function checkJpegExif(buffer: Buffer): boolean {
     if (buffer[offset] !== 0xff) break;
     const markerType = buffer[offset + 1];
     if (markerType === 0xe1) {
-      const exifStr = buffer.slice(offset + 4, offset + 8).toString("ascii");
-      return exifStr === "Exif";
+      return buffer.slice(offset + 4, offset + 8).toString("ascii") === "Exif";
     }
     if (markerType === 0xda) break;
     const segmentLength = buffer.readUInt16BE(offset + 2);
@@ -374,15 +343,18 @@ function checkJpegExif(buffer: Buffer): boolean {
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Combines text and image scores into a final credibility result.
+ * Combines text (and optional image) into a final credibility result.
  *
- * Override rules (applied after threshold classification):
- *  1. negative_uncertainty_count >= 2 → force UNCERTAIN
- *     (positive_uncertainty_count alone does NOT trigger this)
- *  2. text has both credibility signals AND major anomalies → force UNCERTAIN
+ * Classification:
+ *   0–39   → Fake
+ *   40–69  → Uncertain
+ *   70–100 → Real
  *
- * Thresholds: <=40 FAKE | 41–65 UNCERTAIN | >=66 REAL
- * No image → score is 100% text, no blending.
+ * Single override rule:
+ *   strong positive signals AND strong negative signals → Uncertain
+ *   (handles subtle / well-crafted misinformation)
+ *
+ * No image: final score = text score only (no blending).
  */
 export function computeFinalScore(
   textAnalysis: TextAnalysisResult,
@@ -392,25 +364,21 @@ export function computeFinalScore(
     ? Math.round(0.7 * textAnalysis.score + 0.3 * imageAnalysis.score)
     : textAnalysis.score;
 
-  const hasBothSignals =
-    textAnalysis.positive_signals.length > 0 && textAnalysis.has_major_anomalies;
-
   // Classify by threshold
   let prediction: "Real" | "Fake" | "Uncertain";
-  if (credibilityScore >= 66) {
+  if (credibilityScore >= 70) {
     prediction = "Real";
-  } else if (credibilityScore <= 40) {
+  } else if (credibilityScore <= 39) {
     prediction = "Fake";
   } else {
     prediction = "Uncertain";
   }
 
-  // Override: speculative language only (NOT positive uncertainty)
-  const speculationOverride = textAnalysis.negative_uncertainty_count >= 2;
-  // Override: contradiction between credibility signals and hard anomalies
-  const contradictionOverride = hasBothSignals && prediction === "Real";
+  // Single override: conflicting strong signals → Uncertain
+  const contradictionOverride =
+    textAnalysis.has_strong_positive && textAnalysis.has_strong_negative;
 
-  if (speculationOverride || contradictionOverride) {
+  if (contradictionOverride && prediction !== "Fake") {
     prediction = "Uncertain";
   }
 
@@ -418,43 +386,18 @@ export function computeFinalScore(
 
   const explanation: string[] = [];
 
-  if (speculationOverride) {
-    explanation.push(
-      `${textAnalysis.negative_uncertainty_count} speculative phrase(s) detected — classification capped at UNCERTAIN`
-    );
-  }
-
   if (contradictionOverride) {
     explanation.push(
-      "Credibility signals and anomaly signals both present — classification downgraded to UNCERTAIN"
+      "Strong credibility signals and strong anomaly signals both present — classified as UNCERTAIN"
     );
   }
 
-  // Responsible journalism note (only when positive uncertainty is the dominant signal)
-  if (
-    textAnalysis.positive_uncertainty_count > 0 &&
-    textAnalysis.negative_uncertainty_count === 0
-  ) {
-    explanation.push(
-      `${textAnalysis.positive_uncertainty_count} responsible uncertainty phrase(s) detected — treated as cautious reporting`
-    );
-  } else if (
-    textAnalysis.positive_uncertainty_count > 0 &&
-    textAnalysis.negative_uncertainty_count > 0
-  ) {
-    explanation.push(
-      `Mixed uncertainty signals: ${textAnalysis.positive_uncertainty_count} responsible phrase(s), ${textAnalysis.negative_uncertainty_count} speculative phrase(s)`
-    );
+  if (textAnalysis.positive_signals.length > 0) {
+    explanation.push(`Credibility signals: ${textAnalysis.positive_signals.slice(0, 3).join("; ")}`);
   }
 
   if (textAnalysis.flags.length > 0) {
     explanation.push(`Anomaly flags: ${textAnalysis.flags.slice(0, 4).join("; ")}`);
-  }
-
-  if (textAnalysis.positive_signals.length > 0) {
-    explanation.push(
-      `Credibility signals: ${textAnalysis.positive_signals.slice(0, 3).join("; ")}`
-    );
   }
 
   if (imageAnalysis.has_image) {
@@ -472,11 +415,11 @@ export function computeFinalScore(
   }
 
   if (prediction === "Real") {
-    explanation.push("Content meets credibility threshold with no major anomalies");
+    explanation.push("Content meets credibility threshold — consistent with real reporting");
   } else if (prediction === "Fake") {
     explanation.push("Content shows strong indicators associated with misinformation");
   } else {
-    explanation.push("Content shows mixed or uncertain signals — manual verification recommended");
+    explanation.push("Mixed signals detected — manual verification recommended");
   }
 
   return {
