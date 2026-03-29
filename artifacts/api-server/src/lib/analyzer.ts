@@ -27,6 +27,17 @@ const STRUCTURED_REPORTING = [
   /\b(correction|clarification|editor.?s note|update)\b/i,
 ];
 
+/** +5 — Contextual attribution (softer sourcing that still adds credibility) */
+const CONTEXTUAL_ATTRIBUTION = [
+  /\baccording to officials?\b/i,
+  /\bauthorities?\s+said\b/i,
+  /\banalysts?\s+stated\b/i,
+  /\breports?\s+indicate\b/i,
+  /\bspokesperson\s+(said|confirmed|stated|told)\b/i,
+  /\bofficials?\s+(told|confirmed|stated|said)\b/i,
+  /\bdata\s+(shows?|indicates?|suggests?)\b/i,
+];
+
 /** +10 — Named officials or institutional references */
 const INSTITUTIONAL_REFERENCES = [
   /\b(president|minister|senator|governor|director|secretary|spokesperson|commissioner)\b/i,
@@ -161,14 +172,20 @@ export function analyzeText(text: string): TextAnalysisResult {
 
   const hasFactualTone = anyMatch(FACTUAL_TONE, text);
   if (hasFactualTone) {
-    score += 10;
+    score += 15;
     positive_signals.push("Neutral, factual tone detected");
   }
 
   const hasStructuredReporting = anyMatch(STRUCTURED_REPORTING, text);
   if (hasStructuredReporting) {
-    score += 10;
+    score += 12;
     positive_signals.push("Structured, multi-perspective reporting detected");
+  }
+
+  const hasContextualAttribution = anyMatch(CONTEXTUAL_ATTRIBUTION, text);
+  if (hasContextualAttribution) {
+    score += 5;
+    positive_signals.push("Contextual attribution language present");
   }
 
   const hasInstitutionalRef = anyMatch(INSTITUTIONAL_REFERENCES, text);
