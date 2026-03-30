@@ -75,6 +75,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
   /history/{id}:
+    get:
+      operationId: getHistoryItem
+      tags: [analysis]
+      summary: Get full detail for a single history record
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Full analysis detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisResult"
+        "404":
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     delete:
       operationId: deleteHistoryItem
       tags: [analysis]
@@ -215,6 +238,9 @@ components:
         text_preview:
           type: string
           description: First 200 chars of analyzed text
+        text_content:
+          type: string
+          description: Full source text (returned by detail endpoint)
       required:
         - id
         - credibility_score

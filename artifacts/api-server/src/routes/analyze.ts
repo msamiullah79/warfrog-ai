@@ -106,6 +106,41 @@ router.get("/history", async (_req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/history/:id
+ * Returns full analysis detail for a single record.
+ */
+router.get("/history/:id", async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid ID" });
+    return;
+  }
+
+  const [item] = await db
+    .select()
+    .from(analysesTable)
+    .where(eq(analysesTable.id, id))
+    .limit(1);
+
+  if (!item) {
+    res.status(404).json({ error: "History item not found" });
+    return;
+  }
+
+  res.json({
+    id: item.id,
+    credibility_score: item.credibilityScore,
+    prediction: item.prediction,
+    explanation: item.explanation,
+    text_analysis: item.textAnalysis,
+    image_analysis: item.imageAnalysis,
+    analyzed_at: item.analyzedAt,
+    text_preview: item.textPreview,
+    text_content: item.textContent,
+  });
+});
+
+/**
  * DELETE /api/history
  * Clears all history.
  */

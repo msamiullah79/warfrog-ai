@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
+import { useLocation } from "wouter";
 import { 
   Trash2, AlertCircle, Shield, Calendar, Image as ImageIcon, 
   Search, ShieldAlert, Activity, CheckCircle, AlertTriangle, X
@@ -9,11 +10,14 @@ import { useGetHistory, useDeleteHistoryItem, useClearHistory } from "@workspace
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetHistoryQueryKey } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
+import AnalysisDetailModal from "@/components/AnalysisDetailModal";
 
 export default function History() {
   const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const queryClient = useQueryClient();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [, navigate] = useLocation();
 
   const { data, isLoading, error } = useGetHistory();
   
@@ -36,6 +40,12 @@ export default function History() {
     item.text_preview.toLowerCase().includes(search.toLowerCase()) ||
     item.prediction.toLowerCase().includes(search.toLowerCase())
   ) || [];
+
+  function handleRerun(text: string) {
+    sessionStorage.setItem("rerun_text", text);
+    setSelectedId(null);
+    navigate("/");
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -149,7 +159,8 @@ export default function History() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ duration: 0.2, delay: index * 0.05 }}
-                className="glass-panel p-5 rounded-2xl flex flex-col group hover:border-primary/40 transition-colors"
+                onClick={() => setSelectedId(item.id)}
+                className="glass-panel p-5 rounded-2xl flex flex-col group hover:border-primary/40 hover:shadow-[0_0_18px_rgba(99,240,215,0.08)] hover:scale-[1.015] transition-all cursor-pointer"
               >
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex items-center gap-2">
@@ -170,7 +181,7 @@ export default function History() {
                   </div>
                   
                   <button 
-                    onClick={() => deleteItem({ id: item.id })}
+                    onClick={(e) => { e.stopPropagation(); deleteItem({ id: item.id }); }}
                     disabled={isDeleting}
                     className="p-1.5 text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
                     title="Delete Record"
@@ -199,6 +210,18 @@ export default function History() {
           </AnimatePresence>
         </div>
       )}
+
+      {/* Detail modal */}
+      <AnimatePresence>
+        {selectedId !== null && (
+          <AnalysisDetailModal
+            id={selectedId}
+            onClose={() => setSelectedId(null)}
+            onRerun={handleRerun}
+          />
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

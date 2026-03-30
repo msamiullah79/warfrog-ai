@@ -22,4 +22,6 @@ export interface AnalysisResult {
   analyzed_at: Date;
   /** First 200 chars of analyzed text */
   text_preview: string;
+  /** Full source text (returned by detail endpoint) */
+  text_content?: string;
 }

@@ -67,6 +67,10 @@ export const AnalyzeContentResponse = zod.object({
   }),
   analyzed_at: zod.coerce.date(),
   text_preview: zod.string().describe("First 200 chars of analyzed text"),
+  text_content: zod
+    .string()
+    .optional()
+    .describe("Full source text (returned by detail endpoint)"),
 });
 
 /**
@@ -92,6 +96,62 @@ export const GetHistoryResponse = zod.object({
  */
 export const ClearHistoryResponse = zod.object({
   message: zod.string(),
+});
+
+/**
+ * @summary Get full detail for a single history record
+ */
+export const GetHistoryItemParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetHistoryItemResponse = zod.object({
+  id: zod.number().describe("Record ID in history"),
+  credibility_score: zod.number().describe("Overall credibility score 0-100"),
+  prediction: zod.enum(["Real", "Fake", "Uncertain"]),
+  explanation: zod
+    .array(zod.string())
+    .describe("Human-readable explanation points"),
+  text_analysis: zod.object({
+    score: zod.number().describe("Text credibility score 0-100"),
+    confidence: zod.number().describe("Model confidence 0-1"),
+    flags: zod.array(zod.string()).describe("Detected anomaly flags"),
+    positive_signals: zod
+      .array(zod.string())
+      .describe("Credibility indicators"),
+    has_strong_positive: zod
+      .boolean()
+      .describe("Whether strong credibility signals are present"),
+    has_strong_negative: zod
+      .boolean()
+      .describe("Whether strong anomaly signals are present"),
+    has_major_anomalies: zod
+      .boolean()
+      .describe(
+        "Whether major anomalies (sensational\/extraordinary) were detected",
+      ),
+    anomaly_score: zod
+      .number()
+      .describe("Accumulated anomaly weight — Hard Negative Rule fires at ≥40"),
+    negative_uncertainty_count: zod
+      .number()
+      .describe("Count of unverified sourcing instances"),
+    positive_uncertainty_count: zod
+      .number()
+      .describe("Count of responsible uncertainty phrases"),
+  }),
+  image_analysis: zod.object({
+    score: zod.number().describe("Image credibility score 0-100"),
+    has_image: zod.boolean(),
+    flags: zod.array(zod.string()),
+    positive_signals: zod.array(zod.string()),
+  }),
+  analyzed_at: zod.coerce.date(),
+  text_preview: zod.string().describe("First 200 chars of analyzed text"),
+  text_content: zod
+    .string()
+    .optional()
+    .describe("Full source text (returned by detail endpoint)"),
 });
 
 /**

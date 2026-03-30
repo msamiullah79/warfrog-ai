@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -55,6 +55,15 @@ export default function Home() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
 
   const queryClient = useQueryClient();
+
+  // Handle "Re-run Analysis" handoff from History page
+  useEffect(() => {
+    const rerunText = sessionStorage.getItem("rerun_text");
+    if (rerunText) {
+      setText(rerunText);
+      sessionStorage.removeItem("rerun_text");
+    }
+  }, []);
 
   const { mutate, isPending, error } = useAnalyzeContent({
     mutation: {
