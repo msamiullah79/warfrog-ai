@@ -1,0 +1,160 @@
+Update my existing project "Cross-Border Sentinel" by adding an OPTIONAL image analysis module with STRICT constraints.
+
+IMPORTANT: Do NOT modify or break any existing text analysis logic. The current text-based scoring and results must remain EXACTLY the same when no image is uploaded.
+
+---
+
+CORE REQUIREMENT:
+
+The system must follow this rule:
+
+* If NO image is uploaded → result must be 100% based on text (no changes at all)
+* If image IS uploaded → combine text and image scores (70% text, 30% image)
+
+---
+
+IMPLEMENTATION DETAILS:
+
+1. Conditional Pipeline
+
+Add logic:
+
+* If image is uploaded:
+
+  * run image analysis
+  * compute image_score (start from 50 baseline)
+  * final_score = (text_score * 0.7) + (image_score * 0.3)
+
+* If NO image:
+
+  * final_score = text_score (no modification)
+
+---
+
+2. DO NOT MODIFY TEXT ENGINE
+
+* Do NOT change:
+
+  * credibility scoring
+  * anomaly scoring
+  * realism detection
+  * thresholds
+  * labels
+
+Text logic must remain untouched.
+
+---
+
+3. Image Analysis (Simple, Rule-Based)
+
+Create a lightweight image scoring system:
+
+Start:
+
+* image_score = 50
+
+Apply small adjustments:
+
+A. Metadata Check (EXIF)
+
+* If metadata missing:
+  image_score -= 5
+
+B. File Integrity
+
+* If file type mismatch:
+  image_score -= 10
+
+C. Compression / Quality
+
+* If very small or heavily compressed:
+  image_score -= 5
+
+---
+
+4. Context Consistency Check
+
+If:
+
+* image is present
+* AND text anomaly_score > 30
+
+Then:
+
+* Add explanation:
+  "⚠️ Image does not verify the claim — possible context mismatch"
+* image_score -= 10
+
+---
+
+5. Add Visual Reuse Warning (Simulated)
+
+If image is uploaded:
+
+* Add explanation:
+  "🔍 Image origin could not be verified — possible reuse or out-of-context media"
+
+(This is a simulated OSINT-style feature. No external API required.)
+
+---
+
+6. Label Safety Rules (CRITICAL)
+
+A. If text_label == "FAKE":
+final_label MUST remain "FAKE"
+(image cannot override fake classification)
+
+B. If no image:
+DO NOT apply any penalties or boosts
+
+C. Image can:
+- slightly lower score
+- slightly increase confidence
+BUT never dominate decision
+
+---
+
+7. UI Updates
+
+ONLY add new section when image is uploaded:
+
+"Image Analysis"
+
+Show:
+
+* Metadata status
+* Authenticity: Unverified
+* Context match: Weak / Neutral
+* Notes (from explanation)
+
+If no image:
+Keep existing message:
+"No image provided — analysis is text-only"
+
+---
+
+8. Expected Behavior
+
+After implementation:
+
+* Text-only input → EXACT SAME results as before
+* Fake text + image → still FAKE
+* Real text + image → still REAL (maybe slightly higher confidence)
+* Uncertain text + weak image → remains UNCERTAIN
+
+---
+
+DO NOT:
+
+* Add external APIs
+* Add heavy ML models
+* Change UI layout significantly
+* Break current scoring system
+
+Keep it simple, explainable, and consistent.
+
+---
+
+GOAL:
+
+Enhance the system into a multi-modal analyzer while preserving all existing behavior and ensuring image influence is strictly optional and controlled.

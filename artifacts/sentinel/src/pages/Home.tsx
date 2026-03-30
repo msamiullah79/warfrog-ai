@@ -416,12 +416,9 @@ export default function Home() {
             />
 
             {result.image_analysis.has_image && (
-              <DetailsPanel
-                title="Media Forensics"
-                icon={<ImageIcon className="w-4 h-4 text-primary" />}
-                score={result.image_analysis.score}
-                flags={result.image_analysis.flags}
-                signals={result.image_analysis.positive_signals}
+              <ImageAnalysisPanel
+                imageAnalysis={result.image_analysis}
+                anomalyScore={result.text_analysis.anomaly_score}
               />
             )}
           </motion.div>
@@ -526,6 +523,116 @@ function DetailsPanel({
                   </p>
                 )}
               </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ImageAnalysisPanel({
+  imageAnalysis,
+  anomalyScore,
+}: {
+  imageAnalysis: AnalysisResult["image_analysis"];
+  anomalyScore: number;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const contextMatch = anomalyScore > 30 ? "Weak" : "Neutral";
+  const contextMatchColor = anomalyScore > 30 ? "text-red-400" : "text-yellow-400";
+
+  const hasExifFlag = imageAnalysis.flags.some((f) => f.includes("EXIF metadata found"));
+  const hasExifPositive = imageAnalysis.positive_signals.some((s) => s.includes("EXIF"));
+  const metadataStatus = hasExifPositive ? "Present" : hasExifFlag ? "Missing" : "N/A";
+  const metadataColor =
+    metadataStatus === "Present" ? "text-emerald-400" :
+    metadataStatus === "Missing" ? "text-red-400" : "text-muted-foreground";
+
+  const notesFlags = imageAnalysis.flags.filter((f) => !f.startsWith("🔍"));
+  const osintWarning = imageAnalysis.flags.find((f) => f.startsWith("🔍"));
+
+  return (
+    <div className="glass-panel rounded-xl overflow-hidden border border-border/40">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-6 py-4 flex items-center justify-between bg-secondary/20 hover:bg-secondary/40 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <ImageIcon className="w-4 h-4 text-primary" />
+          <span className="font-display font-bold uppercase tracking-wider text-sm text-foreground">Image Analysis</span>
+          <span className={cn(
+            "px-2 py-0.5 rounded text-xs font-bold font-mono border",
+            imageAnalysis.score >= 70 ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/30" :
+            imageAnalysis.score >= 40 ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/30" :
+                                         "text-red-400 bg-red-500/10 border-red-500/30"
+          )}>
+            {imageAnalysis.score}/100
+          </span>
+        </div>
+        <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform duration-300", isOpen && "rotate-180")} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden"
+          >
+            <div className="p-6 border-t border-border/40 space-y-5 bg-background/20">
+
+              {/* Status grid */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-secondary/30 rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Metadata</p>
+                  <p className={cn("text-sm font-bold", metadataColor)}>{metadataStatus}</p>
+                </div>
+                <div className="bg-secondary/30 rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Authenticity</p>
+                  <p className="text-sm font-bold text-yellow-400">Unverified</p>
+                </div>
+                <div className="bg-secondary/30 rounded-lg p-3 text-center">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Context Match</p>
+                  <p className={cn("text-sm font-bold", contextMatchColor)}>{contextMatch}</p>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Notes</h4>
+                <ul className="space-y-2">
+                  {osintWarning && (
+                    <li className="text-sm bg-blue-500/5 border border-blue-500/20 text-blue-400/90 px-3 py-2 rounded-lg leading-relaxed">
+                      {osintWarning}
+                    </li>
+                  )}
+                  {anomalyScore > 30 && (
+                    <li className="text-sm bg-red-500/5 border border-red-500/20 text-red-400/90 px-3 py-2 rounded-lg leading-relaxed">
+                      ⚠️ Image does not verify the claim — possible context mismatch
+                    </li>
+                  )}
+                  {notesFlags.map((flag, i) => (
+                    <li key={i} className="text-sm bg-yellow-500/5 border border-yellow-500/20 text-yellow-400/90 px-3 py-2 rounded-lg leading-relaxed">
+                      {flag}
+                    </li>
+                  ))}
+                  {imageAnalysis.positive_signals.map((sig, i) => (
+                    <li key={i} className="text-sm bg-emerald-500/5 border border-emerald-500/20 text-emerald-400/90 px-3 py-2 rounded-lg flex items-start gap-2">
+                      <span className="shrink-0 mt-0.5 text-xs">✓</span> {sig}
+                    </li>
+                  ))}
+                  {notesFlags.length === 0 && imageAnalysis.positive_signals.length === 0 && !osintWarning && (
+                    <li className="text-sm text-muted-foreground italic px-3 py-2 bg-secondary/20 rounded-lg">
+                      No additional image notes.
+                    </li>
+                  )}
+                </ul>
+              </div>
+
             </div>
           </motion.div>
         )}

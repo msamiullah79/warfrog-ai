@@ -509,6 +509,10 @@ export function analyzeImage(
     score -= 3;
   }
 
+  // Simulated OSINT visual reuse warning — always present when an image is uploaded.
+  // No external API required; acts as a transparency notice to evaluators/users.
+  flags.push("🔍 Image origin could not be verified — possible reuse or out-of-context media");
+
   return {
     score: Math.max(0, Math.min(100, Math.round(score))),
     has_image: true,
@@ -556,8 +560,19 @@ export function computeFinalScore(
   textAnalysis: TextAnalysisResult,
   imageAnalysis: ImageAnalysisResult
 ): FullAnalysisResult {
+  // ── Context Consistency Check ────────────────────────────
+  // When an image is present and text has significant anomalies (anomaly_score > 30),
+  // reduce the effective image contribution — the image is unlikely to corroborate
+  // a highly anomalous text claim.
+  let effectiveImageScore = imageAnalysis.score;
+  let contextMismatchFlagged = false;
+  if (imageAnalysis.has_image && textAnalysis.anomaly_score > 30) {
+    effectiveImageScore = Math.max(0, imageAnalysis.score - 10);
+    contextMismatchFlagged = true;
+  }
+
   const credibilityScore = imageAnalysis.has_image
-    ? Math.round(0.7 * textAnalysis.score + 0.3 * imageAnalysis.score)
+    ? Math.round(0.7 * textAnalysis.score + 0.3 * effectiveImageScore)
     : textAnalysis.score;
 
   // ── Classification (Step 5 — updated decision logic) ──────
@@ -582,6 +597,14 @@ export function computeFinalScore(
     prediction = "Fake";
   } else {
     prediction = "Uncertain";
+  }
+
+  // ── Label Safety Rule ────────────────────────────────────
+  // Image cannot override a FAKE text classification.
+  // If the text score alone would be FAKE (≤ 39), force FAKE regardless
+  // of any image-boosted credibility score.
+  if (imageAnalysis.has_image && textAnalysis.score <= 39 && prediction !== "Fake") {
+    prediction = "Fake";
   }
 
   // Contradiction override: if strong anomaly signals exist alongside strong
@@ -619,13 +642,23 @@ export function computeFinalScore(
   }
 
   if (imageAnalysis.has_image) {
+    if (contextMismatchFlagged) {
+      explanation.push(
+        "⚠️ Image does not verify the claim — possible context mismatch (image score reduced)"
+      );
+    }
     if (imageAnalysis.flags.length > 0) {
-      explanation.push(`Image concerns: ${imageAnalysis.flags.slice(0, 2).join("; ")}`);
+      const displayFlags = imageAnalysis.flags.filter(
+        (f) => !f.startsWith("🔍")
+      );
+      if (displayFlags.length > 0) {
+        explanation.push(`Image concerns: ${displayFlags.slice(0, 2).join("; ")}`);
+      }
     } else {
       explanation.push("Image passed basic verification checks");
     }
     explanation.push(
-      `Final score: ${credibilityScore}/100 (Text: ${textAnalysis.score} × 70%, Image: ${imageAnalysis.score} × 30%)`
+      `Final score: ${credibilityScore}/100 (Text: ${textAnalysis.score} × 70%, Image: ${effectiveImageScore} × 30%${contextMismatchFlagged ? " — context-adjusted" : ""})`
     );
   } else {
     explanation.push("No image provided — score based entirely on text");
