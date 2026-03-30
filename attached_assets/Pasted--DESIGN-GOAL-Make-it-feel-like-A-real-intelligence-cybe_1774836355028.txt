@@ -1,0 +1,159 @@
+🎯 DESIGN GOAL
+
+Make it feel like:
+
+🛡️ A real intelligence / cyber-security analysis tool
+
+NOT:
+
+❌ a student form app
+
+🧩 1. OVERALL LAYOUT (Simple + Professional)
+4
+Structure:
+-------------------------------------------------
+| Header (Project Name + Status)                |
+-------------------------------------------------
+| Input Panel        |   Results Panel          |
+| (left)             |   (right)                |
+-------------------------------------------------
+| Explanation / Logs / Details (full width)    |
+-------------------------------------------------
+
+👉 Clean. Balanced. No clutter.
+
+🧠 2. HEADER (Top Bar)
+Show:
+🐸 Cross-Border Sentinel
+
+Subtitle:
+
+“AI-powered disinformation analysis system”
+
+Status badge:
+🟢 Ready
+🔄 Analyzing...
+Tailwind idea:
+dark bg: bg-gray-900
+text: text-green-400
+📝 3. INPUT PANEL (LEFT SIDE)
+Components:
+📰 Text Input
+Large textarea
+
+Placeholder:
+
+“Paste news article here…”
+
+🖼 Image Upload
+Drag & drop box
+Icon + “Optional”
+▶️ Analyze Button
+Big button:
+“Run Analysis”
+
+👉 Style:
+
+rounded-xl
+subtle shadow
+hover effect
+📊 4. RESULTS PANEL (RIGHT SIDE) — ⭐ MOST IMPORTANT
+
+This is what impresses evaluators.
+
+🔹 A. Score Card (TOP)
+
+Make it BIG.
+
+[ 62 / 100 ]
+Credibility Score
+Colors:
+🟢 Green → Real
+🟡 Yellow → Uncertain
+🔴 Red → Fake
+🔹 B. Label Badge
+
+Example:
+
+🟢 REAL
+🔴 FAKE
+🟡 UNCERTAIN
+
+👉 Use:
+
+rounded-full
+bold text
+🔹 C. Signal Summary
+✔ Neutral tone detected
+✔ Structured reporting
+
+⚠ Unverified sourcing
+⚠ Extreme claim detected
+
+👉 Use icons:
+
+✔ green
+⚠ yellow/red
+🔹 D. Score Breakdown (VERY IMPRESSIVE)
+Text Score: 58 × 70%
+Image Score: 72 × 30%
+
+Final: 62
+
+👉 Makes your system look transparent + intelligent
+
+🧾 5. EXPLANATION PANEL (BOTTOM)
+4
+
+This is your secret weapon.
+
+Show:
+🧠 Analysis Summary
+Strong credibility signals and anomaly signals detected.
+
+This article uses neutral tone but lacks verifiable sources.
+Extreme claim detected: "zero-error targeting"
+🔍 Detailed Breakdown (expandable)
+Credibility Signals
+Anomaly Signals
+Realism Flags
+
+👉 Collapsible sections = looks advanced
+
+🎨 6. COLOR SYSTEM (IMPORTANT)
+
+Use a dark theme:
+
+Type	Color
+Background	gray-900
+Cards	gray-800
+Text	gray-100
+Accent	green / yellow / red
+⚡ 7. SMALL DETAILS THAT MAKE IT LOOK EXPENSIVE
+✅ Add icons (very important)
+
+Use:
+
+lucide-react / heroicons
+✅ Add subtle animations
+button hover
+fade-in results
+✅ Add loading state
+Analyzing...
+[spinner]
+
+👉 Makes it feel real-time
+
+✅ Add “No Image Provided” line
+
+You already did this—KEEP IT
+
+🧠 FINAL UI FLOW (WHAT USER EXPERIENCES)
+Paste news
+Click Analyze
+Loader appears
+Results animate in
+Score + label instantly visible
+Explanation below
+
+👉 Smooth = professional

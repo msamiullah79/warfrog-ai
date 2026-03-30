@@ -11,8 +11,20 @@ export interface TextAnalysis {
   score: number;
   /** Model confidence 0-1 */
   confidence: number;
-  /** Detected issues */
+  /** Detected anomaly flags */
   flags: string[];
   /** Credibility indicators */
   positive_signals: string[];
+  /** Whether strong credibility signals are present */
+  has_strong_positive: boolean;
+  /** Whether strong anomaly signals are present */
+  has_strong_negative: boolean;
+  /** Whether major anomalies (sensational/extraordinary) were detected */
+  has_major_anomalies: boolean;
+  /** Accumulated anomaly weight — Hard Negative Rule fires at ≥40 */
+  anomaly_score: number;
+  /** Count of unverified sourcing instances */
+  negative_uncertainty_count: number;
+  /** Count of responsible uncertainty phrases */
+  positive_uncertainty_count: number;
 }

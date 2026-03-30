@@ -132,17 +132,41 @@ components:
           type: array
           items:
             type: string
-          description: Detected issues
+          description: Detected anomaly flags
         positive_signals:
           type: array
           items:
             type: string
           description: Credibility indicators
+        has_strong_positive:
+          type: boolean
+          description: Whether strong credibility signals are present
+        has_strong_negative:
+          type: boolean
+          description: Whether strong anomaly signals are present
+        has_major_anomalies:
+          type: boolean
+          description: Whether major anomalies (sensational/extraordinary) were detected
+        anomaly_score:
+          type: number
+          description: Accumulated anomaly weight — Hard Negative Rule fires at ≥40
+        negative_uncertainty_count:
+          type: number
+          description: Count of unverified sourcing instances
+        positive_uncertainty_count:
+          type: number
+          description: Count of responsible uncertainty phrases
       required:
         - score
         - confidence
         - flags
         - positive_signals
+        - has_strong_positive
+        - has_strong_negative
+        - has_major_anomalies
+        - anomaly_score
+        - negative_uncertainty_count
+        - positive_uncertainty_count
     ImageAnalysis:
       type: object
       properties:

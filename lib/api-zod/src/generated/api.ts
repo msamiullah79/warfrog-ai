@@ -34,10 +34,30 @@ export const AnalyzeContentResponse = zod.object({
   text_analysis: zod.object({
     score: zod.number().describe("Text credibility score 0-100"),
     confidence: zod.number().describe("Model confidence 0-1"),
-    flags: zod.array(zod.string()).describe("Detected issues"),
+    flags: zod.array(zod.string()).describe("Detected anomaly flags"),
     positive_signals: zod
       .array(zod.string())
       .describe("Credibility indicators"),
+    has_strong_positive: zod
+      .boolean()
+      .describe("Whether strong credibility signals are present"),
+    has_strong_negative: zod
+      .boolean()
+      .describe("Whether strong anomaly signals are present"),
+    has_major_anomalies: zod
+      .boolean()
+      .describe(
+        "Whether major anomalies (sensational\/extraordinary) were detected",
+      ),
+    anomaly_score: zod
+      .number()
+      .describe("Accumulated anomaly weight — Hard Negative Rule fires at ≥40"),
+    negative_uncertainty_count: zod
+      .number()
+      .describe("Count of unverified sourcing instances"),
+    positive_uncertainty_count: zod
+      .number()
+      .describe("Count of responsible uncertainty phrases"),
   }),
   image_analysis: zod.object({
     score: zod.number().describe("Image credibility score 0-100"),
