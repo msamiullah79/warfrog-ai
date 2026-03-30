@@ -140,6 +140,36 @@ const ABSOLUTE_STATEMENTS = [
   /\bno\s+country\s+or\s+(agency|government|organization)\s+(has|have)\s+(confirmed|detected|reported)\b/i,
 ];
 
+/**
+ * -10 — Impossibility/extremity words: absolute language indicating
+ * high-magnitude claims with zero nuance or qualification.
+ */
+const IMPOSSIBILITY_WORDS = [
+  /\bzero.?error\b/i,
+  /\bnever\s+(been\s+)?detected\b/i,
+  /\bperfectly?\s+(accurate|precise|executed|undetectable|invisible)\b/i,
+  /\b100\s*[%percent]+\s+(accurate|effective|reliable|undetectable)\b/i,
+  /\babsolutely\s+no\s+(trace|evidence|detection|warning)\b/i,
+  /\bcompletely\s+(invisible|undetectable|eliminated|eradicated)\b/i,
+  /\bnot\s+a\s+single\s+(trace|piece|shred)\s+(of\s+)?(evidence|proof)\b/i,
+  /\bentire\s+(world|global\s+community|civilization)\s+(was|were|is|has)\b/i,
+];
+
+/**
+ * -25 — Tech implausibility: science-fiction-level technology claims.
+ * CRITICAL anomaly weight — presence strongly indicates fabricated content.
+ */
+const TECH_IMPLAUSIBILITY = [
+  /\bquantum\s+stealth\b/i,
+  /\binvisible\s+to\s+(radar|detection|satellites?|all\s+systems?)\b/i,
+  /\bundetectable\s+(system|weapon|technology|drone|aircraft)\b/i,
+  /\bperfect\s+(accuracy|precision|targeting)\b/i,
+  /\bzero.?error\s+targeting\b/i,
+  /\bimpossible\s+to\s+(trace|detect|intercept|counter)\b/i,
+  /\b(AI|artificial\s+intelligence)\s+(took\s+over|gained\s+sentience|became\s+conscious)\b/i,
+  /\bself.?aware\s+(weapon|drone|system|machine)\b/i,
+];
+
 // ─────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────
@@ -154,6 +184,8 @@ export interface TextAnalysisResult {
   negative_uncertainty_count: number;
   positive_uncertainty_count: number;
   has_major_anomalies: boolean;
+  /** Accumulated anomaly weight — used by the Hard Negative Rule (≥40 → force FAKE) */
+  anomaly_score: number;
 }
 
 export interface ImageAnalysisResult {
@@ -236,55 +268,81 @@ export function analyzeText(text: string): TextAnalysisResult {
   }
 
   // ── NEGATIVE SIGNALS ──────────────────────────────────────
+  // anomalyScore accumulates per-category weights.
+  // Hard Negative Rule: anomalyScore ≥ 40 → force FAKE in computeFinalScore.
+
+  let anomalyScore = 0;
 
   const sensationalMatches = SENSATIONAL_LANGUAGE.filter((p) => p.test(text));
   if (sensationalMatches.length > 0) {
     score -= 15;
-    flags.push("Sensational or clickbait language detected");
+    anomalyScore += 15;
+    flags.push("⚠️ Sensational or clickbait language detected");
   }
 
   const unverifiedCount = countMatches(UNVERIFIED_CLAIMS, text);
   if (unverifiedCount > 0) {
     score -= 15;
+    anomalyScore += 15;
     flags.push(
-      `Strong unverified sourcing language detected (${unverifiedCount} instance${unverifiedCount > 1 ? "s" : ""})`
+      `⚠️ Unverified sourcing language detected (${unverifiedCount} instance${unverifiedCount > 1 ? "s" : ""})`
     );
   }
 
   const speculationCount = countMatches(SPECULATION_PHRASES, text);
   if (speculationCount === 1) {
-    // Single instance of speculation is a minor concern, not a major anomaly.
-    // Does NOT block REAL classification when strong credibility signals are present.
     score -= 3;
-    flags.push("Minor speculative phrasing detected (1 instance) — low weight");
+    flags.push("Minor speculative phrasing (1 instance) — low weight");
   } else if (speculationCount >= 2) {
-    // Repeated speculation is a meaningful signal — apply the full penalty.
     score -= 10;
-    flags.push(`Heavy speculative phrasing detected (${speculationCount} instances)`);
+    anomalyScore += 10;
+    flags.push(`⚠️ Heavy speculative phrasing detected (${speculationCount} instances)`);
   }
 
   const hasExaggeratedImpact = anyMatch(EXAGGERATED_IMPACT, text);
   if (hasExaggeratedImpact) {
     score -= 10;
-    flags.push("Exaggerated impact claims without supporting evidence");
+    anomalyScore += 10;
+    flags.push("⚠️ Exaggerated impact claims without supporting evidence");
   }
 
   // Extraordinary claims: physically/technically implausible assertions.
-  // Fired regardless of surrounding tone — positive signals cannot redeem these.
   const extraordinaryCount = countMatches(EXTRAORDINARY_CLAIMS, text);
   if (extraordinaryCount >= 1) {
     score -= 20;
+    anomalyScore += 20;
     flags.push(
-      `Extraordinary or implausible claim detected (${extraordinaryCount} instance${extraordinaryCount > 1 ? "s" : ""}) — high anomaly weight`
+      `⚠️ Extraordinary claim without evidence: implausible assertion detected (${extraordinaryCount} instance${extraordinaryCount > 1 ? "s" : ""})`
     );
   }
 
-  // Absolute impossibility statements: zero-nuance total-destruction or total-evasion claims.
+  // Absolute impossibility statements: total-destruction or total-evasion claims.
   const absoluteCount = countMatches(ABSOLUTE_STATEMENTS, text);
   if (absoluteCount >= 1) {
     score -= 15;
+    anomalyScore += 15;
     flags.push(
-      `Absolute impossibility statement detected (${absoluteCount} instance${absoluteCount > 1 ? "s" : ""}) — claim severity exceeds evidence`
+      `⚠️ Absolute claim detected: zero-nuance impossibility statement (${absoluteCount} instance${absoluteCount > 1 ? "s" : ""}) — claim severity far exceeds evidence`
+    );
+  }
+
+  // Impossibility/extremity language: absolute words with no qualification.
+  const impossibilityCount = countMatches(IMPOSSIBILITY_WORDS, text);
+  if (impossibilityCount >= 1) {
+    score -= 10;
+    anomalyScore += 10;
+    flags.push(
+      `⚠️ Absolute claim detected: impossibility/extremity language (${impossibilityCount} instance${impossibilityCount > 1 ? "s" : ""})`
+    );
+  }
+
+  // Tech implausibility: science-fiction-level technology claims. CRITICAL weight.
+  const techCount = countMatches(TECH_IMPLAUSIBILITY, text);
+  if (techCount >= 1) {
+    score -= 25;
+    anomalyScore += 25;
+    flags.push(
+      `⚠️ Technological implausibility detected: sci-fi-level technology claim (${techCount} instance${techCount > 1 ? "s" : ""}) — CRITICAL anomaly`
     );
   }
 
@@ -309,7 +367,10 @@ export function analyzeText(text: string): TextAnalysisResult {
 
   const hasStrongPositive = hasFactualTone || hasInstitutionalRef || hasStructuredReporting;
   const hasStrongNegative =
-    sensationalMatches.length > 0 || unverifiedCount > 0 || extraordinaryCount > 0;
+    sensationalMatches.length > 0 ||
+    unverifiedCount > 0 ||
+    extraordinaryCount > 0 ||
+    techCount > 0;
 
   const totalSignals = flags.length + positive_signals.length;
   const confidence = Math.min(0.95, 0.4 + totalSignals * 0.06);
@@ -323,7 +384,8 @@ export function analyzeText(text: string): TextAnalysisResult {
     has_strong_negative: hasStrongNegative,
     negative_uncertainty_count: unverifiedCount,
     positive_uncertainty_count: responsibleUncertaintyCount,
-    has_major_anomalies: sensationalMatches.length > 0 || extraordinaryCount > 0,
+    has_major_anomalies: sensationalMatches.length > 0 || extraordinaryCount > 0 || techCount > 0,
+    anomaly_score: anomalyScore,
   };
 }
 
@@ -448,9 +510,20 @@ export function computeFinalScore(
     prediction = "Uncertain";
   }
 
+  // Hard Negative Rule: if accumulated anomaly weight exceeds threshold,
+  // force FAKE regardless of positive signals or contradiction override.
+  // Prevents heavily anomalous content from escaping into UNCERTAIN.
+  const hardNegativeFired = textAnalysis.anomaly_score >= 40;
+  if (hardNegativeFired) {
+    prediction = "Fake";
+  }
+
   // Single override: conflicting strong signals → Uncertain
+  // Only applied when the Hard Negative Rule has NOT fired.
   const contradictionOverride =
-    textAnalysis.has_strong_positive && textAnalysis.has_strong_negative;
+    !hardNegativeFired &&
+    textAnalysis.has_strong_positive &&
+    textAnalysis.has_strong_negative;
 
   if (contradictionOverride && prediction !== "Fake") {
     prediction = "Uncertain";
@@ -460,7 +533,11 @@ export function computeFinalScore(
 
   const explanation: string[] = [];
 
-  if (contradictionOverride) {
+  if (hardNegativeFired) {
+    explanation.push(
+      `Anomaly score (${textAnalysis.anomaly_score}) exceeded critical threshold — Hard Negative Rule applied, classified as FAKE`
+    );
+  } else if (contradictionOverride) {
     explanation.push(
       "Strong credibility signals and strong anomaly signals both present — classified as UNCERTAIN"
     );
