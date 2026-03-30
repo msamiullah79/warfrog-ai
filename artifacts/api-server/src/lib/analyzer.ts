@@ -107,6 +107,39 @@ const EXAGGERATED_IMPACT = [
 /** -5 — Excessive capitalization */
 const EXCESSIVE_CAPS = /[A-Z]{5,}/;
 
+/**
+ * -20 — Extraordinary claims: physically/technically implausible assertions
+ * with zero grounding in real-world constraints.
+ * These indicate fantasy-level content regardless of surrounding tone.
+ */
+const EXTRAORDINARY_CLAIMS = [
+  /\binvisible\s+(drone|aircraft|weapon|tech|technology)\b/i,
+  /\badvanced\s+cloaking\s+system/i,
+  /\bundetectable\s+by\s+(all|any|every)\b/i,
+  /\bno\s+(satellite|global)\s+(detection|monitoring)\b/i,
+  /\bwithout\s+(leaving\s+)?(any\s+)?(detectable\s+)?trace/i,
+  /\bpenetrat\w*\s+(deep\s+)?underground\s+\w+\s+(instantly|immediately)\b/i,
+  /\bexperimental\s+weapons?\s+capable\s+of\b/i,
+  /\bunderground\s+military\s+city\b/i,
+  /\bpreviously\s+unknown\s+(military\s+)?(alliance|coalition|group)\b/i,
+  /\bsecret\s+(military\s+)?alliance\b/i,
+];
+
+/**
+ * -15 — Absolute impossibility statements: zero-nuance total-destruction or
+ * total-evasion claims that demand extraordinary evidence which is absent.
+ */
+const ABSOLUTE_STATEMENTS = [
+  /\bwiping\s+out\s+entire\b/i,
+  /\bentirely?\s+wipe[sd]?\s+out\b/i,
+  /\bleft\s+no\s+survivors?\b/i,
+  /\beras(e|ed|ing)\s+all\s+(infrastructure|evidence|traces?)\b/i,
+  /\bcompletely\s+(destroy|destroyed|erase[sd]?)\s+\w+\s+without\b/i,
+  /\bnew\s+era\s+of\s+undetectable\b/i,
+  /\bgovernments?\s+worldwide\s+(have\s+)?refused\s+to\s+comment\b/i,
+  /\bno\s+country\s+or\s+(agency|government|organization)\s+(has|have)\s+(confirmed|detected|reported)\b/i,
+];
+
 // ─────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────
@@ -236,6 +269,25 @@ export function analyzeText(text: string): TextAnalysisResult {
     flags.push("Exaggerated impact claims without supporting evidence");
   }
 
+  // Extraordinary claims: physically/technically implausible assertions.
+  // Fired regardless of surrounding tone — positive signals cannot redeem these.
+  const extraordinaryCount = countMatches(EXTRAORDINARY_CLAIMS, text);
+  if (extraordinaryCount >= 1) {
+    score -= 20;
+    flags.push(
+      `Extraordinary or implausible claim detected (${extraordinaryCount} instance${extraordinaryCount > 1 ? "s" : ""}) — high anomaly weight`
+    );
+  }
+
+  // Absolute impossibility statements: zero-nuance total-destruction or total-evasion claims.
+  const absoluteCount = countMatches(ABSOLUTE_STATEMENTS, text);
+  if (absoluteCount >= 1) {
+    score -= 15;
+    flags.push(
+      `Absolute impossibility statement detected (${absoluteCount} instance${absoluteCount > 1 ? "s" : ""}) — claim severity exceeds evidence`
+    );
+  }
+
   if (EXCESSIVE_CAPS.test(text)) {
     score -= 5;
     flags.push("Excessive capitalization detected");
@@ -256,7 +308,8 @@ export function analyzeText(text: string): TextAnalysisResult {
   // ── STRONG SIGNAL FLAGS (used by computeFinalScore) ───────
 
   const hasStrongPositive = hasFactualTone || hasInstitutionalRef || hasStructuredReporting;
-  const hasStrongNegative = sensationalMatches.length > 0 || unverifiedCount > 0;
+  const hasStrongNegative =
+    sensationalMatches.length > 0 || unverifiedCount > 0 || extraordinaryCount > 0;
 
   const totalSignals = flags.length + positive_signals.length;
   const confidence = Math.min(0.95, 0.4 + totalSignals * 0.06);
@@ -270,7 +323,7 @@ export function analyzeText(text: string): TextAnalysisResult {
     has_strong_negative: hasStrongNegative,
     negative_uncertainty_count: unverifiedCount,
     positive_uncertainty_count: responsibleUncertaintyCount,
-    has_major_anomalies: sensationalMatches.length > 0,
+    has_major_anomalies: sensationalMatches.length > 0 || extraordinaryCount > 0,
   };
 }
 
