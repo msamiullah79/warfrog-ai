@@ -127,8 +127,21 @@ const EXAGGERATED_IMPACT = [
   /\b(everyone (knows?|agrees?|says?)|nobody (talks? about|reports?))\b/i,
 ];
 
-/** -5 — Excessive capitalization */
-const EXCESSIVE_CAPS = /[A-Z]{5,}/;
+/**
+ * Known professional/military acronyms that must never trigger the caps penalty.
+ * Extend this set freely — false-positives on legitimate text are worse than
+ * missing a real clickbait case.
+ */
+const CAPS_ALLOWLIST = new Set([
+  "USA", "U.S.", "UK", "EU", "UN", "NATO", "WHO", "IMF", "WTO", "FBI",
+  "CIA", "NSA", "DOD", "DOJ", "FEMA", "NIH", "CDC", "EPA", "DHS",
+  "AWACS", "SIGINT", "HUMINT", "OSINT", "IAEA", "ICBM", "AUMF",
+  "KC-135", "F-16", "F-35", "B-52", "MQ-9",
+  "REUTERS", "AP", "AFP", "BBC", "CNN", "NBC", "ABC", "CBS",
+  "LGBTQ", "LGBT", "COVID", "AIDS", "HIV", "DNA", "RNA",
+  "GMT", "UTC", "EST", "PST", "EDT", "PDT",
+  "CEO", "CFO", "COO", "CTO", "VP", "PM", "MP",
+]);
 
 /**
  * -20 — Extraordinary claims: physically/technically implausible assertions
@@ -390,9 +403,22 @@ export function analyzeText(text: string): TextAnalysisResult {
     );
   }
 
-  if (EXCESSIVE_CAPS.test(text)) {
-    score -= 5;
-    flags.push("Excessive capitalization detected");
+  // ── EXCESSIVE CAPITALIZATION ────────────────────────────────
+  // Only flag clickbait-style all-caps words (> 3 chars), never acronyms.
+  // Trigger when 2+ suspicious caps words appear OR they exceed 10% of total words.
+  {
+    const allWords = text.match(/\b[A-Za-z][\w'-]*\b/g) ?? [];
+    const suspiciousCapsWords = allWords.filter(
+      (w) => w === w.toUpperCase() && w.length > 3 && !CAPS_ALLOWLIST.has(w)
+    );
+    const ratio = allWords.length > 0 ? suspiciousCapsWords.length / allWords.length : 0;
+    if (suspiciousCapsWords.length >= 2 || ratio > 0.1) {
+      anomalyScore += 10;
+      score -= 5;
+      flags.push(
+        `⚠️ Excessive capitalization detected (${suspiciousCapsWords.length} suspicious caps word${suspiciousCapsWords.length !== 1 ? "s" : ""}: ${suspiciousCapsWords.slice(0, 4).join(", ")})`
+      );
+    }
   }
 
   // ── SHORT CONTENT FLAG (mild penalty) ─────────────────────
