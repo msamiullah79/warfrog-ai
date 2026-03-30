@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Trash2, AlertCircle, Shield, Calendar, Image as ImageIcon, 
-  Search, ShieldAlert, Activity, CheckCircle, AlertTriangle 
+  Search, ShieldAlert, Activity, CheckCircle, AlertTriangle, X
 } from "lucide-react";
 import { useGetHistory, useDeleteHistoryItem, useClearHistory } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
