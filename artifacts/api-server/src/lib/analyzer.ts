@@ -46,6 +46,29 @@ const INSTITUTIONAL_REFERENCES = [
   /\b(professor|dr\.|doctor|researcher|scientist|analyst|expert)\b/i,
 ];
 
+/** +10 — Institutional and organizational language (baseline credibility boost) */
+const INSTITUTION_KEYWORDS = [
+  /\b(organization|council|agency|department|trade\s+body|security\s+body)\b/i,
+  /\b(diplomat[s]?|official[s]?|representative[s]?|delegation)\b/i,
+  /\b(commission|committee|coalition|federation|bloc)\b/i,
+];
+
+/** +5 — Named countries or geopolitical regions (geo-political grounding) */
+const COUNTRY_KEYWORDS = [
+  /\b(united\s+states|united\s+kingdom|european\s+union|china|india|russia|brazil)\b/i,
+  /\b(japan|germany|france|canada|australia|south\s+korea|saudi\s+arabia)\b/i,
+  /\b(africa|asia|europe|latin\s+america|middle\s+east|southeast\s+asia)\b/i,
+];
+
+/** +15 — Policy / diplomatic / technical language (Reuters-style real journalism marker) */
+const POLICY_LANGUAGE = [
+  /\b(moratorium|customs\s+duties?|tariff[s]?|sanction[s]?|embargo)\b/i,
+  /\b(negotiation[s]?|agreement|treaty|accord|resolution|protocol)\b/i,
+  /\b(extension|talks|policy|legislation|regulation|directive)\b/i,
+  /\b(bilateral|multilateral|diplomatic|geopolitical|economic\s+policy)\b/i,
+  /\b(trade\s+war|trade\s+deal|trade\s+dispute|supply\s+chain|market\s+access)\b/i,
+];
+
 /** +5 — Responsible uncertainty (cautious, transparent journalism) */
 const RESPONSIBLE_UNCERTAINTY = [
   /\bnot\s+yet\s+confirmed\b/i,
@@ -267,9 +290,30 @@ export function analyzeText(text: string): TextAnalysisResult {
     );
   }
 
+  // Step 1 — Institution / organizational keyword boost
+  const hasInstitutionKeywords = anyMatch(INSTITUTION_KEYWORDS, text);
+  if (hasInstitutionKeywords) {
+    score += 10;
+    positive_signals.push("Institutional/organizational language detected");
+  }
+
+  // Step 1b — Geographic / geopolitical grounding boost
+  const hasCountryKeywords = anyMatch(COUNTRY_KEYWORDS, text);
+  if (hasCountryKeywords) {
+    score += 5;
+    positive_signals.push("Geographic/geopolitical grounding detected");
+  }
+
+  // Step 2 — Policy/diplomatic language boost (Reuters-style marker)
+  const hasPolicyLanguage = anyMatch(POLICY_LANGUAGE, text);
+  if (hasPolicyLanguage) {
+    score += 15;
+    positive_signals.push("Policy/diplomatic language detected — strong credibility signal");
+  }
+
   // ── NEGATIVE SIGNALS ──────────────────────────────────────
   // anomalyScore accumulates per-category weights.
-  // Hard Negative Rule: anomalyScore ≥ 40 → force FAKE in computeFinalScore.
+  // Hard Negative Rule: anomalyScore ≥ 60 → force FAKE in computeFinalScore.
 
   let anomalyScore = 0;
 
@@ -357,6 +401,22 @@ export function analyzeText(text: string): TextAnalysisResult {
   if (wordCount < 30) {
     score -= 8;
     flags.push("Very short content — insufficient for reliable assessment");
+  }
+
+  // ── BASELINE CREDIBILITY BOOSTS ────────────────────────────
+
+  // Step 3 — Journalistic Structure Boost:
+  // Clean article (zero anomalies) with neutral tone → extra push toward REAL.
+  if (anomalyScore === 0 && hasFactualTone) {
+    score += 10;
+    positive_signals.push("Clean journalistic structure boost: neutral tone with zero anomalies");
+  }
+
+  // Step 4 — Empty Case Fix:
+  // No signals at all → nudge from neutral 50 toward real (avoids default UNCERTAIN).
+  if (score === 50 && anomalyScore === 0) {
+    score += 10;
+    positive_signals.push("Baseline credibility boost: no anomaly signals detected");
   }
 
   // ── CLAMP ─────────────────────────────────────────────────
@@ -500,9 +560,23 @@ export function computeFinalScore(
     ? Math.round(0.7 * textAnalysis.score + 0.3 * imageAnalysis.score)
     : textAnalysis.score;
 
-  // Classify by threshold
+  // ── Classification (Step 5 — updated decision logic) ──────
+  //
+  // Priority order:
+  //   1. Hard Negative Rule: anomaly_score ≥ 60 → force FAKE
+  //   2. REAL: credibility ≥ 65 AND anomaly < 20 (low anomaly threshold prevents false positives)
+  //   3. Score-based FAKE: credibility ≤ 39 (very low score regardless of anomaly)
+  //   4. Everything else → UNCERTAIN
+  //   5. Contradiction override: strong positive + strong negative → UNCERTAIN
+  //      (catches well-crafted misinformation that slipped through to REAL)
+
   let prediction: "Real" | "Fake" | "Uncertain";
-  if (credibilityScore >= 70) {
+
+  const hardNegativeFired = textAnalysis.anomaly_score >= 60;
+
+  if (hardNegativeFired) {
+    prediction = "Fake";
+  } else if (credibilityScore >= 65 && textAnalysis.anomaly_score < 20) {
     prediction = "Real";
   } else if (credibilityScore <= 39) {
     prediction = "Fake";
@@ -510,22 +584,15 @@ export function computeFinalScore(
     prediction = "Uncertain";
   }
 
-  // Hard Negative Rule: if accumulated anomaly weight exceeds threshold,
-  // force FAKE regardless of positive signals or contradiction override.
-  // Prevents heavily anomalous content from escaping into UNCERTAIN.
-  const hardNegativeFired = textAnalysis.anomaly_score >= 40;
-  if (hardNegativeFired) {
-    prediction = "Fake";
-  }
-
-  // Single override: conflicting strong signals → Uncertain
-  // Only applied when the Hard Negative Rule has NOT fired.
+  // Contradiction override: if strong anomaly signals exist alongside strong
+  // credibility signals but didn't hit the hard negative threshold, downgrade to UNCERTAIN.
   const contradictionOverride =
     !hardNegativeFired &&
+    prediction === "Real" &&
     textAnalysis.has_strong_positive &&
     textAnalysis.has_strong_negative;
 
-  if (contradictionOverride && prediction !== "Fake") {
+  if (contradictionOverride) {
     prediction = "Uncertain";
   }
 
@@ -535,11 +602,11 @@ export function computeFinalScore(
 
   if (hardNegativeFired) {
     explanation.push(
-      `Anomaly score (${textAnalysis.anomaly_score}) exceeded critical threshold — Hard Negative Rule applied, classified as FAKE`
+      `Anomaly score (${textAnalysis.anomaly_score}) exceeded critical threshold (60) — Hard Negative Rule applied, classified as FAKE`
     );
   } else if (contradictionOverride) {
     explanation.push(
-      "Strong credibility signals and strong anomaly signals both present — classified as UNCERTAIN"
+      "Strong credibility signals and anomaly signals both present — classified as UNCERTAIN"
     );
   }
 
