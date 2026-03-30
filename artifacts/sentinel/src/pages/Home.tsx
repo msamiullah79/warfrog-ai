@@ -64,7 +64,7 @@ export default function Home() {
       {/* Header */}
       <div className="max-w-3xl">
         <h1 className="text-4xl md:text-5xl font-display font-bold text-foreground mb-4">
-          Threat Intelligence <span className="text-gradient">Engine</span>
+          War<span className="text-gradient">Frog</span>
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
           Paste suspected news content below. Our multi-modal engine will cross-reference 
